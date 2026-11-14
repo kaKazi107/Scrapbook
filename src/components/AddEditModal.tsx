@@ -7,18 +7,20 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Image,
   Alert,
   useColorScheme,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActivityEntry, CategoryId, NewActivityEntry } from '@/types/activity';
+import { MetadataSearchResult, ExternalSource } from '@/types/metadata';
 import { CATEGORY_LIST, CATEGORIES } from '@/constants/categories';
 import { RatingStars } from './RatingStars';
+import { MetadataSearchSheet } from './MetadataSearchSheet';
 import { saveImageToLocalStorage } from '@/services/storage';
 import { toLocalDateString, isValidDateString } from '@/utils/date';
 
@@ -49,6 +51,9 @@ export function AddEditModal({
   const [imageUri, setImageUri] = useState<string | undefined>();
   const [isCover, setIsCover] = useState(false);
   const [metadata, setMetadata] = useState<Record<string, string>>({});
+  const [externalId, setExternalId] = useState<string | undefined>();
+  const [externalSource, setExternalSource] = useState<ExternalSource | undefined>();
+  const [searchSheetVisible, setSearchSheetVisible] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -63,6 +68,8 @@ export function AddEditModal({
         setImageUri(entryToEdit.imageUri);
         setIsCover(entryToEdit.isCover || false);
         setMetadata(entryToEdit.metadata || {});
+        setExternalId(entryToEdit.externalId);
+        setExternalSource(entryToEdit.externalSource as ExternalSource | undefined);
       } else {
         const defaultDate = initialDate || toLocalDateString();
         setCategory('movie');
@@ -74,11 +81,38 @@ export function AddEditModal({
         setImageUri(undefined);
         setIsCover(true); // default first entry of day as cover
         setMetadata({});
+        setExternalId(undefined);
+        setExternalSource(undefined);
       }
     }
   }, [visible, entryToEdit, initialDate]);
 
   const activeCategoryDef = CATEGORIES[category];
+
+  const handleCategoryChange = (newCategory: CategoryId) => {
+    if (newCategory === category) return;
+    // Clear auto-filled identifiers from a different category
+    setExternalId(undefined);
+    setExternalSource(undefined);
+    setCategory(newCategory);
+  };
+
+  const handleSelectMetadataResult = (result: MetadataSearchResult) => {
+    setTitle(result.title);
+    setSubtitle(result.subtitle || '');
+    setExternalId(result.externalId);
+    setExternalSource(result.externalSource);
+
+    // Merge auto-filled fields into metadata (keeps any manual edits for other keys)
+    setMetadata((prev) => ({ ...prev, ...result.metadata }));
+
+    // Only set the poster if the user hasn't already picked a personal photo
+    if (result.fullImageUrl && !imageUri) {
+      setImageUri(result.fullImageUrl);
+    }
+
+    setSearchSheetVisible(false);
+  };
 
   const handlePickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -155,6 +189,8 @@ export function AddEditModal({
         note: note.trim() || undefined,
         imageUri: permanentImageUri,
         isCover,
+        externalId,
+        externalSource,
         metadata: Object.keys(cleanMetadata).length > 0 ? cleanMetadata : undefined,
       };
 
@@ -217,7 +253,7 @@ export function AddEditModal({
                       borderColor: isSelected ? catColor : isDark ? '#374151' : '#E5E7EB',
                     },
                   ]}
-                  onPress={() => setCategory(cat.id)}
+                  onPress={() => handleCategoryChange(cat.id)}
                 >
                   <Ionicons name={cat.icon as any} size={16} color={isSelected ? '#FFFFFF' : catColor} />
                   <Text style={[styles.catOptionText, { color: isSelected ? '#FFFFFF' : isDark ? '#D1D5DB' : '#374151' }]}>
@@ -233,7 +269,7 @@ export function AddEditModal({
           <View style={styles.photoContainer}>
             {imageUri ? (
               <View style={styles.imagePreviewWrapper}>
-                <Image source={{ uri: imageUri }} style={styles.imagePreview} />
+                <Image source={{ uri: imageUri }} style={styles.imagePreview} contentFit="cover" />
                 <TouchableOpacity style={styles.removeImageBtn} onPress={() => setImageUri(undefined)}>
                   <Ionicons name="close-circle" size={24} color="#EF4444" />
                 </TouchableOpacity>
@@ -258,6 +294,43 @@ export function AddEditModal({
               </View>
             )}
           </View>
+
+          {/* Auto-fill from metadata provider */}
+          <TouchableOpacity
+            style={[
+              styles.autoFillBtn,
+              {
+                backgroundColor: isDark ? activeCategoryDef.darkColor + '22' : activeCategoryDef.color + '14',
+                borderColor: isDark ? activeCategoryDef.darkColor + '55' : activeCategoryDef.color + '44',
+              },
+            ]}
+            onPress={() => setSearchSheetVisible(true)}
+            activeOpacity={0.75}
+          >
+            <Ionicons
+              name="sparkles-outline"
+              size={18}
+              color={isDark ? activeCategoryDef.darkColor : activeCategoryDef.color}
+            />
+            <View style={styles.autoFillTextWrap}>
+              <Text
+                style={[
+                  styles.autoFillTitle,
+                  { color: isDark ? activeCategoryDef.darkColor : activeCategoryDef.color },
+                ]}
+              >
+                Search {activeCategoryDef.label} to auto-fill
+              </Text>
+              <Text style={[styles.autoFillHint, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
+                {externalSource ? `Linked via ${externalSource.toUpperCase()}` : 'Poster, title, and details'}
+              </Text>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={isDark ? activeCategoryDef.darkColor : activeCategoryDef.color}
+            />
+          </TouchableOpacity>
 
           {/* Core Info Inputs */}
           <Text style={[styles.sectionLabel, { color: isDark ? '#9CA3AF' : '#4B5563' }]}>DETAILS</Text>
@@ -359,6 +432,14 @@ export function AddEditModal({
             </Text>
           </TouchableOpacity>
         </ScrollView>
+
+        <MetadataSearchSheet
+          visible={searchSheetVisible}
+          category={category}
+          initialQuery={title}
+          onClose={() => setSearchSheetVisible(false)}
+          onSelectResult={handleSelectMetadataResult}
+        />
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -417,6 +498,28 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     paddingBottom: 4,
+  },
+  autoFillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 16,
+  },
+  autoFillTextWrap: {
+    flex: 1,
+  },
+  autoFillTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  autoFillHint: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
   },
   catOption: {
     flexDirection: 'row',

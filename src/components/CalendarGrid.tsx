@@ -4,9 +4,9 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Image,
   useColorScheme,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityEntry, CategoryId } from '@/types/activity';
 import { CATEGORIES } from '@/constants/categories';
@@ -183,7 +183,13 @@ export function CalendarGrid({
             >
               {/* Image poster background/thumbnail if available */}
               {hasEntries && coverEntry?.imageUri ? (
-                <Image source={{ uri: coverEntry.imageUri }} style={styles.cellImage} resizeMode="cover" />
+                <Image
+                  source={{ uri: coverEntry.imageUri }}
+                  style={styles.cellImage}
+                  contentFit="cover"
+                  transition={150}
+                  cachePolicy="disk"
+                />
               ) : null}
 
               {/* Overlay shading for text readability if image exists */}

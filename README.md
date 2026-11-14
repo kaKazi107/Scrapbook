@@ -16,13 +16,16 @@ app document storage). No account required.
 - **expo-image-picker** for camera / gallery
 - **expo-haptics** for tactile feedback
 
-## Features (Phase 1–3)
+## Features (Phase 1–4)
 
 - Visual month calendar where each day shows the poster/photo of the day
   (plus a `+N` badge when multiple memories share a day)
 - Category filters: movies, TV, music, food & dining, places & travel
 - Quick log / edit flow with rating, notes, photo, date, and category-specific extras
   (director, season/episode, artist, cuisine, city, etc.)
+- **Metadata auto-fill**: search iTunes (movies/music), TVMaze (TV), and
+  OpenStreetMap (food & places) to pull in titles, posters, credits, and locations
+  with one tap
 - Day detail sheet with "set as day cover" when several entries share a date
 - Timeline feed view toggle
 - Search and insights on the Explore tab (search, category + rating filters,
@@ -44,14 +47,21 @@ src/
     RatingStars.tsx
     AddEditModal.tsx
     DayDetailModal.tsx
+    MetadataSearchSheet.tsx
   constants/
     categories.ts    # Category definitions, colors, extra fields
     theme.ts         # Colors, spacing, fonts
   services/
     db.ts            # Schema + CRUD + search queries
     storage.ts       # Copies picked images into app document storage
+    metadata/
+      index.ts       # Unified search entrypoint (timeout + routing)
+      itunes.ts      # Movies & music search
+      tvmaze.ts      # TV shows search
+      osm.ts         # Places & restaurants search (Nominatim)
   types/
     activity.ts      # Shared entry model
+    metadata.ts      # Auto-fill result contract
   utils/
     date.ts          # Local-date helpers (YYYY-MM-DD formatting/validation)
 ```
@@ -82,7 +92,9 @@ npm run lint       # Lint (first run configures ESLint)
 
 ## Roadmap
 
-- **Phase 4:** metadata auto-fill via TMDB (movies/TV), iTunes (music),
-  OpenStreetMap (places)
-- **Phase 5:** backup/export (JSON + photos), monthly recap cards, map view,
+- **Phase 4 (done):** metadata auto-fill via iTunes (movies/music), TVMaze (TV),
+  and OpenStreetMap (food & places). Keyless, with `expo-image` disk-cached posters.
+- **Stage B:** Supabase auth + cloud database + object storage + edge-function
+  search proxy (server-side TMDB key)
+- **Later:** backup/export (JSON + photos), monthly recap cards, map view,
   watchlist / want-to-go list

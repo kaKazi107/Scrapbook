@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, useColorScheme } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, useColorScheme } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityEntry } from '@/types/activity';
 import { CATEGORIES } from '@/constants/categories';
@@ -32,7 +33,13 @@ export function EntryCard({ entry, onPress, onEdit, onDelete, showDate = true }:
     >
       {/* Artwork Poster / Image if available */}
       {entry.imageUri ? (
-        <Image source={{ uri: entry.imageUri }} style={styles.image} resizeMode="cover" />
+        <Image
+          source={{ uri: entry.imageUri }}
+          style={styles.image}
+          contentFit="cover"
+          transition={150}
+          cachePolicy="disk"
+        />
       ) : (
         <View style={[styles.placeholderImage, { backgroundColor: categoryColor + '20' }]}>
           <Ionicons name={category.icon as any} size={36} color={categoryColor} />
