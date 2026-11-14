@@ -2,7 +2,11 @@ import { CategoryId } from '@/types/activity';
 import { MetadataSearchResult } from '@/types/metadata';
 
 /**
- * Searches iTunes for Movies (`media=movie`) or Music (`media=music`).
+ * Searches iTunes for Movies or Music.
+ *
+ * NOTE: iTunes `media=movie` returns 0 results for every query (API limitation).
+ * For movies we search without a media filter and client-side filter for
+ * `kind === "feature-movie"`. Music uses `media=music` which works correctly.
  * Keyless, free, reliable.
  */
 export async function searchITunes(
@@ -13,9 +17,10 @@ export async function searchITunes(
   const cleanQuery = query.trim();
   if (!cleanQuery) return [];
 
-  const mediaParam = category === 'movie' ? 'movie' : 'music';
-  const entityParam = category === 'movie' ? '&entity=movie' : '';
-  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(cleanQuery)}&media=${mediaParam}${entityParam}&limit=15`;
+  // Movies: no media filter (media=movie is broken), filter client-side
+  // Music: media=music works correctly
+  const mediaParam = category === 'music' ? '&media=music' : '';
+  const url = `https://itunes.apple.com/search?term=${encodeURIComponent(cleanQuery)}${mediaParam}&limit=20`;
 
   const response = await fetch(url, { signal });
   if (!response.ok) {
@@ -27,12 +32,24 @@ export async function searchITunes(
     return [];
   }
 
-  return data.results.map((item: any) => {
+  // For movies, keep only actual feature-movie results
+  const filteredResults =
+    category === 'movie'
+      ? data.results.filter((item: any) => item.kind === 'feature-movie')
+      : data.results;
+
+  return filteredResults.map((item: any) => {
     const rawArtwork: string = item.artworkUrl100 || item.artworkUrl60 || '';
     const fullArtwork = rawArtwork ? rawArtwork.replace(/\/\d+x\d+bb/g, '/600x600bb') : undefined;
     const previewArtwork = rawArtwork || undefined;
 
     if (category === 'movie') {
+      // iTunes movie result shape:
+      //   trackName = movie title
+      //   artistName = director
+      //   releaseDate = ISO date string
+      //   primaryGenreName = genre
+      //   artworkUrl100 = poster thumbnail
       const director = item.artistName || '';
       const year = item.releaseDate ? item.releaseDate.substring(0, 4) : '';
       const genre = item.primaryGenreName || '';
