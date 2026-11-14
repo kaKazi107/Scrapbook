@@ -27,6 +27,10 @@ export interface ActivityEntry {
   externalId?: string;
   externalSource?: string;
   metadata?: Record<string, any>;
+  /** Stage B cloud sync bookkeeping (local SQLite only). */
+  remoteId?: string;
+  userId?: string;
+  syncedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

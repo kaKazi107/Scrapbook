@@ -33,10 +33,13 @@ import { AddEditModal } from '@/components/AddEditModal';
 import { DayDetailModal } from '@/components/DayDetailModal';
 import { deleteImageFromLocalStorage } from '@/services/storage';
 import { BottomTabInset } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
+import { syncNow } from '@/services/cloud/sync';
 
 export default function HomeScreen() {
   const isDark = useColorScheme() === 'dark';
   const db = useSQLiteContext();
+  const { user } = useAuth();
 
   const [viewMode, setViewMode] = useState<'calendar' | 'timeline'>('calendar');
   const [selectedCategory, setSelectedCategory] = useState<CategoryId | 'all'>('all');
@@ -65,10 +68,24 @@ export default function HomeScreen() {
     }
   }, [db]);
 
+  /** Pushes/pulls cloud changes, then refreshes local UI if anything moved. */
+  const syncInBackground = useCallback(async () => {
+    if (!user?.id) return;
+    const result = await syncNow(db, user.id);
+    if (!result.error && (result.pushed > 0 || result.pulled > 0)) {
+      await loadData();
+      if (dayModalVisible && selectedDayDateStr) {
+        const refreshed = await getEntriesByDate(db, selectedDayDateStr);
+        setDayEntries(refreshed);
+      }
+    }
+  }, [db, user?.id, loadData, dayModalVisible, selectedDayDateStr]);
+
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [loadData])
+      syncInBackground();
+    }, [loadData, syncInBackground])
   );
 
   // Filtered entries for timeline
@@ -121,6 +138,7 @@ export default function HomeScreen() {
       const updatedDayData = await getEntriesByDate(db, selectedDayDateStr);
       setDayEntries(updatedDayData);
     }
+    syncInBackground();
   };
 
   // Handle Delete Entry
@@ -135,6 +153,7 @@ export default function HomeScreen() {
         const updatedDayData = await getEntriesByDate(db, selectedDayDateStr);
         setDayEntries(updatedDayData);
       }
+      syncInBackground();
     } catch (err: any) {
       Alert.alert('Error', 'Failed to delete memory.');
     }

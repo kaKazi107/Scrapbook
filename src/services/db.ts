@@ -1,6 +1,22 @@
 import { SQLiteDatabase } from 'expo-sqlite';
 import { ActivityEntry, NewActivityEntry } from '@/types/activity';
 
+/**
+ * Adds a column to a table only when it does not already exist.
+ * SQLite has no `ADD COLUMN IF NOT EXISTS`, so we inspect `PRAGMA table_info`.
+ */
+async function ensureColumn(
+  db: SQLiteDatabase,
+  table: string,
+  column: string,
+  definition: string
+): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (!columns.some((c) => c.name === column)) {
+    await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 export async function initDatabase(db: SQLiteDatabase): Promise<void> {
   await db.execAsync(`
     PRAGMA journal_mode = WAL;
@@ -25,6 +41,11 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_entries_logged_date ON activity_entries(logged_date);
     CREATE INDEX IF NOT EXISTS idx_entries_category ON activity_entries(category);
   `);
+
+  // Stage B: cloud sync bookkeeping columns (added in-place for existing installs).
+  await ensureColumn(db, 'activity_entries', 'remote_id', 'TEXT');
+  await ensureColumn(db, 'activity_entries', 'user_id', 'TEXT');
+  await ensureColumn(db, 'activity_entries', 'synced_at', 'TEXT');
 }
 
 interface RawDbRow {
@@ -43,6 +64,9 @@ interface RawDbRow {
   metadata: string | null;
   created_at: string;
   updated_at: string;
+  remote_id: string | null;
+  user_id: string | null;
+  synced_at: string | null;
 }
 
 function mapRowToEntry(row: RawDbRow): ActivityEntry {
@@ -69,6 +93,9 @@ function mapRowToEntry(row: RawDbRow): ActivityEntry {
     externalId: row.external_id || undefined,
     externalSource: row.external_source || undefined,
     metadata: parsedMetadata,
+    remoteId: row.remote_id || undefined,
+    userId: row.user_id || undefined,
+    syncedAt: row.synced_at || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -230,4 +257,131 @@ export async function searchEntries(
 
   const rows = await db.getAllAsync<RawDbRow>(sql, params);
   return rows.map(mapRowToEntry);
+}
+
+// ---------------------------------------------------------------------------
+// Stage B: cloud sync helpers
+// ---------------------------------------------------------------------------
+
+/** Entries that are new or edited since their last successful sync. */
+export async function getEntriesForSync(db: SQLiteDatabase): Promise<ActivityEntry[]> {
+  const rows = await db.getAllAsync<RawDbRow>(
+    `SELECT * FROM activity_entries
+     WHERE synced_at IS NULL OR updated_at > synced_at
+     ORDER BY updated_at ASC`
+  );
+  return rows.map(mapRowToEntry);
+}
+
+/** Marks a local entry as synced to its remote counterpart. */
+export async function markEntrySynced(
+  db: SQLiteDatabase,
+  localId: string,
+  remoteId: string,
+  userId: string,
+  syncedAt: string
+): Promise<void> {
+  await db.runAsync(
+    `UPDATE activity_entries SET remote_id = ?, user_id = ?, synced_at = ? WHERE id = ?`,
+    [remoteId, userId, syncedAt, localId]
+  );
+}
+
+export interface RemoteEntryInput {
+  remoteId: string;
+  userId: string;
+  category: string;
+  title: string;
+  subtitle?: string;
+  loggedDate: string;
+  loggedTime?: string;
+  rating?: number;
+  note?: string;
+  imageUri?: string;
+  isCover?: boolean;
+  externalId?: string;
+  externalSource?: string;
+  metadata?: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Inserts or updates a local row from a remote entry pulled during sync.
+ * Local rows that were edited after the remote copy are left untouched so the
+ * next push wins (simple last-write-wins reconciliation).
+ */
+export async function upsertEntryFromRemote(
+  db: SQLiteDatabase,
+  remote: RemoteEntryInput
+): Promise<void> {
+  const metadataStr = remote.metadata ? JSON.stringify(remote.metadata) : null;
+  const existing = await db.getAllAsync<RawDbRow>(
+    `SELECT * FROM activity_entries WHERE remote_id = ?`,
+    [remote.remoteId]
+  );
+
+  if (existing.length > 0) {
+    const local = existing[0];
+    // Local has unsynced edits that are newer than the remote copy -> keep local.
+    if (local.synced_at && local.updated_at > remote.updatedAt) {
+      return;
+    }
+
+    await db.runAsync(
+      `UPDATE activity_entries SET
+        category = ?, title = ?, subtitle = ?, logged_date = ?, logged_time = ?,
+        rating = ?, note = ?, image_uri = ?, is_cover = ?, external_id = ?,
+        external_source = ?, metadata = ?, user_id = ?, synced_at = ?, updated_at = ?
+      WHERE remote_id = ?`,
+      [
+        remote.category,
+        remote.title,
+        remote.subtitle || null,
+        remote.loggedDate,
+        remote.loggedTime || null,
+        remote.rating ?? null,
+        remote.note || null,
+        remote.imageUri || null,
+        remote.isCover ? 1 : 0,
+        remote.externalId || null,
+        remote.externalSource || null,
+        metadataStr,
+        remote.userId,
+        remote.updatedAt,
+        remote.updatedAt,
+        remote.remoteId,
+      ]
+    );
+    return;
+  }
+
+  const localId = `entry_${remote.remoteId}`;
+  await db.runAsync(
+    `INSERT INTO activity_entries (
+      id, category, title, subtitle, logged_date, logged_time, rating, note,
+      image_uri, is_cover, external_id, external_source, metadata,
+      remote_id, user_id, synced_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      localId,
+      remote.category,
+      remote.title,
+      remote.subtitle || null,
+      remote.loggedDate,
+      remote.loggedTime || null,
+      remote.rating ?? null,
+      remote.note || null,
+      remote.imageUri || null,
+      remote.isCover ? 1 : 0,
+      remote.externalId || null,
+      remote.externalSource || null,
+      metadataStr,
+      remote.remoteId,
+      remote.userId,
+      remote.updatedAt,
+      remote.createdAt,
+      remote.updatedAt,
+    ]
+  );
 }

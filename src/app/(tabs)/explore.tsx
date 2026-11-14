@@ -23,10 +23,13 @@ import { EntryCard } from '@/components/EntryCard';
 import { AddEditModal } from '@/components/AddEditModal';
 import { deleteImageFromLocalStorage } from '@/services/storage';
 import { BottomTabInset } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
+import { syncNow } from '@/services/cloud/sync';
 
 export default function ExploreScreen() {
   const isDark = useColorScheme() === 'dark';
   const db = useSQLiteContext();
+  const { user, cloudEnabled, signOut } = useAuth();
 
   const [query, setQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryId | 'all'>('all');
@@ -49,11 +52,37 @@ export default function ExploreScreen() {
     }
   }, [db, query, selectedCategory, minRating]);
 
+  const syncInBackground = useCallback(async () => {
+    if (!user?.id) return;
+    const result = await syncNow(db, user.id);
+    if (!result.error && (result.pushed > 0 || result.pulled > 0)) {
+      await runSearch();
+    }
+  }, [db, user?.id, runSearch]);
+
   useFocusEffect(
     useCallback(() => {
       runSearch();
-    }, [runSearch])
+      syncInBackground();
+    }, [runSearch, syncInBackground])
   );
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign out',
+      'Your entries stay saved on this device. Cloud sync will stop until you sign in again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign out',
+          style: 'destructive',
+          onPress: async () => {
+            await signOut();
+          },
+        },
+      ]
+    );
+  };
 
   const handleDelete = async (entry: ActivityEntry) => {
     Alert.alert('Delete Memory', 'Are you sure you want to delete this memory?', [
@@ -67,6 +96,7 @@ export default function ExploreScreen() {
           }
           await deleteEntry(db, entry.id);
           await runSearch();
+          syncInBackground();
         },
       },
     ]);
@@ -105,6 +135,17 @@ export default function ExploreScreen() {
         <Text style={[styles.headerTitle, { color: isDark ? '#F9FAFB' : '#111827' }]}>
           Explore & Insights
         </Text>
+
+        {cloudEnabled && user ? (
+          <TouchableOpacity
+            onPress={handleSignOut}
+            hitSlop={8}
+            accessibilityLabel="Account"
+            style={styles.accountBtn}
+          >
+            <Ionicons name="person-circle-outline" size={26} color={isDark ? '#9CA3AF' : '#6B7280'} />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
@@ -248,6 +289,41 @@ export default function ExploreScreen() {
                 );
               })}
             </View>
+
+            {/* Cloud sync status */}
+            <View
+              style={[
+                styles.breakdownCard,
+                {
+                  backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+                  borderColor: isDark ? '#374151' : '#E5E7EB',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                },
+              ]}
+            >
+              <Ionicons
+                name={cloudEnabled ? (user ? 'cloud-done' : 'cloud-offline-outline') : 'phone-portrait-outline'}
+                size={22}
+                color={cloudEnabled && user ? '#10B981' : isDark ? '#9CA3AF' : '#6B7280'}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.breakdownTitle, { color: isDark ? '#F9FAFB' : '#111827' }]}>
+                  {cloudEnabled ? (user ? 'Cloud Sync On' : 'Cloud Sync Off') : 'Local Only'}
+                </Text>
+                <Text
+                  style={{ color: isDark ? '#9CA3AF' : '#6B7280', fontSize: 12, lineHeight: 16 }}
+                  numberOfLines={2}
+                >
+                  {cloudEnabled
+                    ? user
+                      ? `Synced as ${user.email ?? 'signed-in user'}`
+                      : 'Sign in to sync across devices'
+                    : 'Add Supabase credentials in .env.local to enable cloud sync'}
+                </Text>
+              </View>
+            </View>
           </View>
         )}
 
@@ -296,6 +372,7 @@ export default function ExploreScreen() {
               await deleteImageFromLocalStorage(previousImageUri);
             }
             await runSearch();
+            syncInBackground();
           }
         }}
       />
@@ -308,9 +385,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
+  },
+  accountBtn: {
+    padding: 2,
   },
   headerTitle: {
     fontSize: 20,

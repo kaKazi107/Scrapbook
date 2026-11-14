@@ -5,7 +5,8 @@ Log the movies, TV shows, music, restaurants, and places that make up your days 
 see them come alive on a clean, visual calendar.
 
 This is a **local-first** app: all entries and photos live on-device (SQLite +
-app document storage). No account required.
+app document storage). Signing in is optional — when configured, it also syncs your
+scrapbook to the cloud across devices.
 
 ## Tech stack
 
@@ -15,6 +16,7 @@ app document storage). No account required.
 - **expo-file-system** for permanent on-device photo storage
 - **expo-image-picker** for camera / gallery
 - **expo-haptics** for tactile feedback
+- **Supabase** (Postgres + Auth + Storage) for optional cloud sync
 
 ## Features (Phase 1–4)
 
@@ -30,6 +32,8 @@ app document storage). No account required.
 - Timeline feed view toggle
 - Search and insights on the Explore tab (search, category + rating filters,
   category breakdown, stats)
+- **Optional cloud accounts** (email/password) with automatic two-way sync of
+  entries and photos across devices; the app still works fully offline
 - Light & dark mode
 
 ## Project structure
@@ -37,9 +41,15 @@ app document storage). No account required.
 ```
 src/
   app/
-    _layout.tsx      # SQLite provider, theme, native tabs
-    index.tsx        # Calendar + timeline home screen
-    explore.tsx      # Search, filters, and insights
+    _layout.tsx        # SQLite provider, auth provider, theme, auth gate
+    (auth)/
+      _layout.tsx
+      sign-in.tsx      # Email/password sign in
+      sign-up.tsx      # Create account
+    (tabs)/
+      _layout.tsx      # Native bottom tabs
+      index.tsx        # Calendar + timeline home screen
+      explore.tsx      # Search, filters, insights, account
   components/
     CalendarGrid.tsx
     CategoryFilter.tsx
@@ -48,23 +58,48 @@ src/
     AddEditModal.tsx
     DayDetailModal.tsx
     MetadataSearchSheet.tsx
+    auth/AuthForm.tsx
+  config/
+    env.ts             # Supabase env validation
   constants/
-    categories.ts    # Category definitions, colors, extra fields
-    theme.ts         # Colors, spacing, fonts
+    categories.ts      # Category definitions, colors, extra fields
+    theme.ts           # Colors, spacing, fonts
+  contexts/
+    auth-context.tsx   # Session state + sign out
   services/
-    db.ts            # Schema + CRUD + search queries
-    storage.ts       # Copies picked images into app document storage
+    db.ts              # Schema + CRUD + search + sync helpers
+    storage.ts         # Copies picked images into app document storage
+    auth.ts            # Sign up / in / out wrappers
+    supabase.ts        # Shared Supabase client
     metadata/
-      index.ts       # Unified search entrypoint (timeout + routing)
-      itunes.ts      # Movies & music search
-      tvmaze.ts      # TV shows search
-      osm.ts         # Places & restaurants search (Nominatim)
+      index.ts         # Unified search entrypoint (timeout + routing)
+      itunes.ts        # Movies & music search
+      tvmaze.ts        # TV shows search
+      osm.ts           # Places & restaurants search (Nominatim)
+    cloud/
+      sync.ts          # Push/pull local <-> Postgres
+      storage.ts       # Photo upload/delete to Supabase Storage
   types/
-    activity.ts      # Shared entry model
-    metadata.ts      # Auto-fill result contract
+    activity.ts        # Shared entry model
+    metadata.ts        # Auto-fill result contract
   utils/
-    date.ts          # Local-date helpers (YYYY-MM-DD formatting/validation)
+    date.ts            # Local-date helpers (YYYY-MM-DD formatting/validation)
+supabase/
+  migrations/0001_init.sql   # Tables, RLS, trigger, storage bucket
+  README.md                  # Step-by-step Supabase setup
 ```
+
+## Enable cloud sync (optional)
+
+Cloud sync is off until you connect a Supabase project; without it the app runs
+fully local.
+
+1. Create a Supabase project and run `supabase/migrations/0001_init.sql` in the
+   SQL editor. Full walkthrough: [`supabase/README.md`](./supabase/README.md).
+2. Copy `.env.example` to `.env.local` and fill in your **Project URL** and
+   **anon public** key.
+3. Restart Metro (`Ctrl+C`, then `npm start`). The app will now show the sign-in
+   screen and sync entries + photos after you log in.
 
 ## Run it on a physical Android phone
 
@@ -94,7 +129,8 @@ npm run lint       # Lint (first run configures ESLint)
 
 - **Phase 4 (done):** metadata auto-fill via iTunes (movies/music), TVMaze (TV),
   and OpenStreetMap (food & places). Keyless, with `expo-image` disk-cached posters.
-- **Stage B:** Supabase auth + cloud database + object storage + edge-function
-  search proxy (server-side TMDB key)
+- **Stage B (built, awaiting live credentials):** Supabase auth + Postgres sync +
+  Storage photo uploads. Remaining: edge-function search proxy with server-side
+  TMDB key.
 - **Later:** backup/export (JSON + photos), monthly recap cards, map view,
   watchlist / want-to-go list
