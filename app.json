@@ -1,16 +1,19 @@
 {
   "expo": {
-    "name": "opencode-project-folder",
-    "slug": "opencode-project-folder",
+    "name": "Scrapbook",
+    "slug": "scrapbook",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "opencodeprojectfolder",
+    "scheme": "scrapbook",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "supportsTablet": true,
+      "bundleIdentifier": "com.scrapbook.app"
     },
     "android": {
+      "package": "com.scrapbook.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -28,9 +31,17 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#2563EB",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
+        }
+      ],
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Scrapbook uses your photos so you can attach memories to the activities you log.",
+          "cameraPermission": "Scrapbook uses your camera so you can capture photos for the memories you log."
         }
       ]
     ],

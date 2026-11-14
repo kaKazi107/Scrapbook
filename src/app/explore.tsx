@@ -1,180 +1,464 @@
-import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import React, { useState, useCallback } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  useColorScheme,
+  StatusBar,
+  Alert,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSQLiteContext } from 'expo-sqlite';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from 'expo-router';
 
-import { ExternalLink } from '@/components/external-link';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+import { ActivityEntry, CategoryId } from '@/types/activity';
+import { CATEGORY_LIST } from '@/constants/categories';
+import { searchEntries, deleteEntry, updateEntry, getAllEntries } from '@/services/db';
+import { CategoryFilter } from '@/components/CategoryFilter';
+import { EntryCard } from '@/components/EntryCard';
+import { AddEditModal } from '@/components/AddEditModal';
+import { deleteImageFromLocalStorage } from '@/services/storage';
+import { BottomTabInset } from '@/constants/theme';
 
-export default function TabTwoScreen() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
+export default function ExploreScreen() {
+  const isDark = useColorScheme() === 'dark';
+  const db = useSQLiteContext();
+
+  const [query, setQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<CategoryId | 'all'>('all');
+  const [minRating, setMinRating] = useState<number>(0);
+
+  const [searchResults, setSearchResults] = useState<ActivityEntry[]>([]);
+  const [allEntries, setAllEntries] = useState<ActivityEntry[]>([]);
+
+  const [editingEntry, setEditingEntry] = useState<ActivityEntry | null>(null);
+  const [addModalVisible, setAddModalVisible] = useState(false);
+
+  const runSearch = useCallback(async () => {
+    try {
+      const results = await searchEntries(db, query, selectedCategory, minRating);
+      setSearchResults(results);
+      const all = await getAllEntries(db);
+      setAllEntries(all);
+    } catch (err: any) {
+      console.error('Error running search:', err);
+    }
+  }, [db, query, selectedCategory, minRating]);
+
+  useFocusEffect(
+    useCallback(() => {
+      runSearch();
+    }, [runSearch])
+  );
+
+  const handleDelete = async (entry: ActivityEntry) => {
+    Alert.alert('Delete Memory', 'Are you sure you want to delete this memory?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          if (entry.imageUri) {
+            await deleteImageFromLocalStorage(entry.imageUri);
+          }
+          await deleteEntry(db, entry.id);
+          await runSearch();
+        },
+      },
+    ]);
   };
-  const theme = useTheme();
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
+  const handleEdit = (entry: ActivityEntry) => {
+    setEditingEntry(entry);
+    setAddModalVisible(true);
+  };
+
+  // Compute insights / statistics
+  const totalCount = allEntries.length;
+  const categoryCounts: Record<string, number> = {};
+  let totalRatingSum = 0;
+  let ratedCount = 0;
+
+  allEntries.forEach((e) => {
+    categoryCounts[e.category] = (categoryCounts[e.category] || 0) + 1;
+    if (e.rating) {
+      totalRatingSum += e.rating;
+      ratedCount += 1;
+    }
   });
 
+  const avgRating = ratedCount > 0 ? (totalRatingSum / ratedCount).toFixed(1) : 'N/A';
+
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
-          </ThemedText>
+    <SafeAreaView
+      edges={['top', 'left', 'right']}
+      style={[styles.container, { backgroundColor: isDark ? '#111827' : '#F9FAFB' }]}
+    >
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
-        </ThemedView>
+      {/* Header */}
+      <View style={[styles.header, { borderBottomColor: isDark ? '#1F2937' : '#E5E7EB' }]}>
+        <Text style={[styles.headerTitle, { color: isDark ? '#F9FAFB' : '#111827' }]}>
+          Explore & Insights
+        </Text>
+      </View>
 
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
-            </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        {/* Search Input Box */}
+        <View
+          style={[
+            styles.searchBox,
+            {
+              backgroundColor: isDark ? '#1F2937' : '#FFFFFF',
+              borderColor: isDark ? '#374151' : '#E5E7EB',
+            },
+          ]}
+        >
+          <Ionicons name="search" size={20} color={isDark ? '#9CA3AF' : '#6B7280'} />
+          <TextInput
+            style={[styles.searchInput, { color: isDark ? '#F9FAFB' : '#111827' }]}
+            placeholder="Search movies, TV, places, notes..."
+            placeholderTextColor={isDark ? '#6B7280' : '#9CA3AF'}
+            value={query}
+            onChangeText={setQuery}
+          />
+          {query.length > 0 && (
+            <TouchableOpacity onPress={() => setQuery('')}>
+              <Ionicons name="close-circle" size={18} color={isDark ? '#9CA3AF' : '#6B7280'} />
+            </TouchableOpacity>
+          )}
+        </View>
 
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
-              </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
-              />
-            </ThemedView>
-          </Collapsible>
+        {/* Category Filter */}
+        <CategoryFilter selectedCategory={selectedCategory} onSelectCategory={setSelectedCategory} />
 
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
-            </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+        {/* Rating Filter Pills */}
+        <View style={styles.filterSection}>
+          <Text style={[styles.filterLabel, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>RATING</Text>
+          <View style={styles.pillsRow}>
+            {[0, 3, 4, 5].map((stars) => {
+              const isSelected = minRating === stars;
+              return (
+                <TouchableOpacity
+                  key={stars}
+                  style={[
+                    styles.ratingPill,
+                    isSelected
+                      ? { backgroundColor: '#F59E0B' }
+                      : { backgroundColor: isDark ? '#1F2937' : '#E5E7EB' },
+                  ]}
+                  onPress={() => setMinRating(stars)}
+                >
+                  <Ionicons
+                    name="star"
+                    size={12}
+                    color={isSelected ? '#FFFFFF' : isDark ? '#9CA3AF' : '#6B7280'}
+                  />
+                  <Text
+                    style={[
+                      styles.ratingPillText,
+                      { color: isSelected ? '#FFFFFF' : isDark ? '#D1D5DB' : '#374151' },
+                    ]}
+                  >
+                    {stars === 0 ? 'All Ratings' : `${stars}+ Stars`}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
 
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+        {/* Insights / Stats Cards (when not actively querying) */}
+        {query.length === 0 && minRating === 0 && selectedCategory === 'all' && (
+          <View style={styles.statsSection}>
+            <Text style={[styles.sectionTitle, { color: isDark ? '#F9FAFB' : '#111827' }]}>
+              Scrapbook Overview
+            </Text>
 
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
-            </ThemedText>
-          </Collapsible>
-        </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
-      </ThemedView>
-    </ScrollView>
+            <View style={styles.statsGrid}>
+              <View
+                style={[
+                  styles.statCard,
+                  { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: isDark ? '#374151' : '#E5E7EB' },
+                ]}
+              >
+                <Ionicons name="journal" size={24} color="#3B82F6" />
+                <Text style={[styles.statValue, { color: isDark ? '#F9FAFB' : '#111827' }]}>
+                  {totalCount}
+                </Text>
+                <Text style={[styles.statLabel, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
+                  Total Memories
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.statCard,
+                  { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: isDark ? '#374151' : '#E5E7EB' },
+                ]}
+              >
+                <Ionicons name="star" size={24} color="#F59E0B" />
+                <Text style={[styles.statValue, { color: isDark ? '#F9FAFB' : '#111827' }]}>
+                  {avgRating}
+                </Text>
+                <Text style={[styles.statLabel, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
+                  Avg Rating
+                </Text>
+              </View>
+            </View>
+
+            {/* Breakdown by Category */}
+            <View
+              style={[
+                styles.breakdownCard,
+                { backgroundColor: isDark ? '#1F2937' : '#FFFFFF', borderColor: isDark ? '#374151' : '#E5E7EB' },
+              ]}
+            >
+              <Text style={[styles.breakdownTitle, { color: isDark ? '#F9FAFB' : '#111827' }]}>
+                Category Breakdown
+              </Text>
+
+              {CATEGORY_LIST.map((cat) => {
+                const count = categoryCounts[cat.id] || 0;
+                const percentage = totalCount > 0 ? Math.round((count / totalCount) * 100) : 0;
+                const color = isDark ? cat.darkColor : cat.color;
+
+                return (
+                  <View key={cat.id} style={styles.categoryRow}>
+                    <View style={styles.catRowLeft}>
+                      <Ionicons name={cat.icon as any} size={16} color={color} />
+                      <Text style={[styles.catName, { color: isDark ? '#D1D5DB' : '#374151' }]}>
+                        {cat.label}
+                      </Text>
+                    </View>
+
+                    <View style={styles.catRowRight}>
+                      <View style={[styles.barTrack, { backgroundColor: isDark ? '#374151' : '#E5E7EB' }]}>
+                        <View style={[styles.barFill, { width: `${percentage}%`, backgroundColor: color }]} />
+                      </View>
+                      <Text style={[styles.catCount, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
+                        {count}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* Search Results List Header */}
+        <View style={styles.resultsHeader}>
+          <Text style={[styles.sectionTitle, { color: isDark ? '#F9FAFB' : '#111827' }]}>
+            {query.length > 0 || minRating > 0 || selectedCategory !== 'all'
+              ? 'Search Results'
+              : 'Recent Entries'}
+          </Text>
+          <Text style={[styles.resultsCount, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
+            {searchResults.length} items
+          </Text>
+        </View>
+
+        {/* Results List */}
+        {searchResults.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="search-outline" size={40} color={isDark ? '#4B5563' : '#D1D5DB'} />
+            <Text style={[styles.emptyText, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
+              No memories matched your query or filters.
+            </Text>
+          </View>
+        ) : (
+          searchResults.map((entry) => (
+            <EntryCard
+              key={entry.id}
+              entry={entry}
+              onEdit={() => handleEdit(entry)}
+              onDelete={() => handleDelete(entry)}
+            />
+          ))
+        )}
+      </ScrollView>
+
+      {/* Edit Modal */}
+      <AddEditModal
+        visible={addModalVisible}
+        entryToEdit={editingEntry}
+        onClose={() => setAddModalVisible(false)}
+        onSave={async (payload) => {
+          if (editingEntry) {
+            const previousImageUri = editingEntry.imageUri;
+            await updateEntry(db, editingEntry.id, payload);
+            if (previousImageUri && previousImageUri !== payload.imageUri) {
+              await deleteImageFromLocalStorage(previousImageUri);
+            }
+            await runSearch();
+          }
+        }}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
+  container: {
     flex: 1,
   },
-  contentContainer: {
+  header: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  scrollContent: {
+    paddingBottom: BottomTabInset + 24,
+  },
+  searchBox: {
     flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  container: {
-    maxWidth: MaxContentWidth,
-    flexGrow: 1,
-  },
-  titleContainer: {
-    gap: Spacing.three,
     alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 10,
   },
-  centerText: {
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+  },
+  filterSection: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  filterLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  pillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  ratingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  ratingPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  statsSection: {
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  statCard: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    gap: 4,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  breakdownCard: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  breakdownTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginVertical: 6,
+  },
+  catRowLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: 120,
+  },
+  catName: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  catRowRight: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  barTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  catCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    width: 24,
+    textAlign: 'right',
+  },
+  resultsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  resultsCount: {
+    fontSize: 13,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    padding: 32,
+    gap: 10,
+  },
+  emptyText: {
+    fontSize: 14,
     textAlign: 'center',
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-  linkButton: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
-    justifyContent: 'center',
-    gap: Spacing.one,
-    alignItems: 'center',
-  },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
-  },
-  collapsibleContent: {
-    alignItems: 'center',
-  },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
-  },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
   },
 });

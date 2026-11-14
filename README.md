@@ -1,56 +1,88 @@
-# Welcome to your Expo app 👋
+# Scrapbook
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+An all-in-one personal media & memory diary for Android (and iOS where supported).
+Log the movies, TV shows, music, restaurants, and places that make up your days and
+see them come alive on a clean, visual calendar.
 
-## Get started
+This is a **local-first** app: all entries and photos live on-device (SQLite +
+app document storage). No account required.
 
-1. Install dependencies
+## Tech stack
 
-   ```bash
-   npm install
-   ```
+- **React Native + Expo (SDK 58)** with **TypeScript**
+- **expo-router** for file-based navigation with native tabs
+- **expo-sqlite** for local persistence
+- **expo-file-system** for permanent on-device photo storage
+- **expo-image-picker** for camera / gallery
+- **expo-haptics** for tactile feedback
 
-2. Start the app
+## Features (Phase 1–3)
 
-   ```bash
-   npx expo start
-   ```
+- Visual month calendar where each day shows the poster/photo of the day
+  (plus a `+N` badge when multiple memories share a day)
+- Category filters: movies, TV, music, food & dining, places & travel
+- Quick log / edit flow with rating, notes, photo, date, and category-specific extras
+  (director, season/episode, artist, cuisine, city, etc.)
+- Day detail sheet with "set as day cover" when several entries share a date
+- Timeline feed view toggle
+- Search and insights on the Explore tab (search, category + rating filters,
+  category breakdown, stats)
+- Light & dark mode
 
-In the output, you'll find options to open the app in a
+## Project structure
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+src/
+  app/
+    _layout.tsx      # SQLite provider, theme, native tabs
+    index.tsx        # Calendar + timeline home screen
+    explore.tsx      # Search, filters, and insights
+  components/
+    CalendarGrid.tsx
+    CategoryFilter.tsx
+    EntryCard.tsx
+    RatingStars.tsx
+    AddEditModal.tsx
+    DayDetailModal.tsx
+  constants/
+    categories.ts    # Category definitions, colors, extra fields
+    theme.ts         # Colors, spacing, fonts
+  services/
+    db.ts            # Schema + CRUD + search queries
+    storage.ts       # Copies picked images into app document storage
+  types/
+    activity.ts      # Shared entry model
+  utils/
+    date.ts          # Local-date helpers (YYYY-MM-DD formatting/validation)
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+## Run it on a physical Android phone
 
-### Other setup steps
+1. Install **Expo Go** from the Play Store.
+2. Make sure your phone and PC are on the same Wi-Fi network.
+3. Start the dev server:
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+   ```bash
+   npm start
+   ```
 
-## Learn more
+4. Scan the QR code with Expo Go (Android), or press `a` to open on a USB-connected
+   device / emulator.
 
-To learn more about developing your project with Expo, look at the following resources:
+> If the QR code can't connect over LAN, run `npx expo start --tunnel`.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Useful commands
 
-## Join the community
+```bash
+npm start          # Start Metro / Expo dev server
+npm run android    # Start and open on Android
+npx tsc --noEmit   # Type-check the project
+npm run lint       # Lint (first run configures ESLint)
+```
 
-Join our community of developers creating universal apps.
+## Roadmap
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- **Phase 4:** metadata auto-fill via TMDB (movies/TV), iTunes (music),
+  OpenStreetMap (places)
+- **Phase 5:** backup/export (JSON + photos), monthly recap cards, map view,
+  watchlist / want-to-go list
