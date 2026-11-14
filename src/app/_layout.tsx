@@ -37,6 +37,13 @@ function RootNavigator() {
 
   if (loading) return null;
 
+  // Avoid a brief flash of the tabs before the redirect effect fires.
+  if (cloudEnabled) {
+    const inAuthGroup = segments[0] === '(auth)';
+    if (!session && !inAuthGroup) return null;
+    if (session && inAuthGroup) return null;
+  }
+
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(auth)" />

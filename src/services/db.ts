@@ -40,6 +40,13 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
 
     CREATE INDEX IF NOT EXISTS idx_entries_logged_date ON activity_entries(logged_date);
     CREATE INDEX IF NOT EXISTS idx_entries_category ON activity_entries(category);
+
+    -- Tombstones for entries deleted locally but not yet deleted in the cloud.
+    -- Without these, a pull would resurrect the row right after a local delete.
+    CREATE TABLE IF NOT EXISTS sync_deletions (
+      remote_id TEXT PRIMARY KEY NOT NULL,
+      deleted_at TEXT NOT NULL
+    );
   `);
 
   // Stage B: cloud sync bookkeeping columns (added in-place for existing installs).
@@ -220,7 +227,21 @@ export async function updateEntry(db: SQLiteDatabase, id: string, entry: Partial
 }
 
 export async function deleteEntry(db: SQLiteDatabase, id: string): Promise<void> {
+  // Remember the cloud counterpart so sync can delete it instead of pulling it back.
+  const rows = await db.getAllAsync<{ remote_id: string | null }>(
+    `SELECT remote_id FROM activity_entries WHERE id = ?`,
+    [id]
+  );
+  const remoteId = rows[0]?.remote_id;
+
   await db.runAsync(`DELETE FROM activity_entries WHERE id = ?`, [id]);
+
+  if (remoteId) {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO sync_deletions (remote_id, deleted_at) VALUES (?, ?)`,
+      [remoteId, new Date().toISOString()]
+    );
+  }
 }
 
 export async function setDayCover(db: SQLiteDatabase, loggedDate: string, entryId: string): Promise<void> {
@@ -281,10 +302,36 @@ export async function markEntrySynced(
   userId: string,
   syncedAt: string
 ): Promise<void> {
+  // Align updated_at with the server timestamp. Otherwise a phone clock that
+  // runs ahead of the server would make every row look "dirty" forever.
   await db.runAsync(
-    `UPDATE activity_entries SET remote_id = ?, user_id = ?, synced_at = ? WHERE id = ?`,
-    [remoteId, userId, syncedAt, localId]
+    `UPDATE activity_entries
+     SET remote_id = ?, user_id = ?, synced_at = ?, updated_at = ?
+     WHERE id = ?`,
+    [remoteId, userId, syncedAt, syncedAt, localId]
   );
+}
+
+// ---------------------------------------------------------------------------
+// Stage B: delete tombstones
+// ---------------------------------------------------------------------------
+
+/** Cloud ids that still need a delete pushed. */
+export async function getPendingDeletions(
+  db: SQLiteDatabase
+): Promise<{ remoteId: string; deletedAt: string }[]> {
+  const rows = await db.getAllAsync<{ remote_id: string; deleted_at: string }>(
+    `SELECT remote_id, deleted_at FROM sync_deletions ORDER BY deleted_at ASC`
+  );
+  return rows.map((r) => ({ remoteId: r.remote_id, deletedAt: r.deleted_at }));
+}
+
+/** Drops a tombstone once the cloud row is gone. */
+export async function clearPendingDeletion(
+  db: SQLiteDatabase,
+  remoteId: string
+): Promise<void> {
+  await db.runAsync(`DELETE FROM sync_deletions WHERE remote_id = ?`, [remoteId]);
 }
 
 export interface RemoteEntryInput {

@@ -55,7 +55,7 @@ export default function ExploreScreen() {
   const syncInBackground = useCallback(async () => {
     if (!user?.id) return;
     const result = await syncNow(db, user.id);
-    if (!result.error && (result.pushed > 0 || result.pulled > 0)) {
+    if (!result.error && (result.pushed > 0 || result.pulled > 0 || result.deleted > 0)) {
       await runSearch();
     }
   }, [db, user?.id, runSearch]);

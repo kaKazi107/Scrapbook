@@ -72,7 +72,7 @@ export default function HomeScreen() {
   const syncInBackground = useCallback(async () => {
     if (!user?.id) return;
     const result = await syncNow(db, user.id);
-    if (!result.error && (result.pushed > 0 || result.pulled > 0)) {
+    if (!result.error && (result.pushed > 0 || result.pulled > 0 || result.deleted > 0)) {
       await loadData();
       if (dayModalVisible && selectedDayDateStr) {
         const refreshed = await getEntriesByDate(db, selectedDayDateStr);

@@ -3,6 +3,8 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { supabase } from '@/services/supabase';
 import {
   getEntriesForSync,
+  getPendingDeletions,
+  clearPendingDeletion,
   markEntrySynced,
   upsertEntryFromRemote,
   type RemoteEntryInput,
@@ -13,6 +15,7 @@ import type { ActivityEntry } from '@/types/activity';
 export interface SyncSummary {
   pushed: number;
   pulled: number;
+  deleted: number;
   error: string | null;
   skippedReason?: string;
 }
@@ -97,6 +100,30 @@ async function pushLocalEntries(db: SQLiteDatabase, userId: string): Promise<num
   return pushed;
 }
 
+/** Deletes cloud rows for locally-deleted entries (tombstones). */
+async function pushDeletions(db: SQLiteDatabase): Promise<number> {
+  if (!supabase) return 0;
+
+  const tombstones = await getPendingDeletions(db);
+  let deleted = 0;
+
+  for (const tombstone of tombstones) {
+    const { error } = await supabase
+      .from('activity_entries')
+      .delete()
+      .eq('id', tombstone.remoteId);
+
+    if (error) {
+      throw new Error(`Delete failed: ${error.message}`);
+    }
+
+    await clearPendingDeletion(db, tombstone.remoteId);
+    deleted += 1;
+  }
+
+  return deleted;
+}
+
 /** Pulls the user's remote entries and merges them into local SQLite. */
 async function pullRemoteEntries(db: SQLiteDatabase): Promise<number> {
   if (!supabase) return 0;
@@ -110,8 +137,14 @@ async function pullRemoteEntries(db: SQLiteDatabase): Promise<number> {
     throw new Error(`Pull failed: ${error.message}`);
   }
 
+  // Skip rows that are queued for local deletion (they're about to be removed).
+  const tombstoned = new Set(
+    (await getPendingDeletions(db)).map((d) => d.remoteId)
+  );
+
   let pulled = 0;
   for (const row of data ?? []) {
+    if (tombstoned.has(row.id)) continue;
     await upsertEntryFromRemote(db, fromRemoteRow(row));
     pulled += 1;
   }
@@ -128,17 +161,18 @@ export async function syncNow(
   userId: string | undefined
 ): Promise<SyncSummary> {
   if (!isCloudReady()) {
-    return { pushed: 0, pulled: 0, error: null, skippedReason: 'Cloud not configured' };
+    return { pushed: 0, pulled: 0, deleted: 0, error: null, skippedReason: 'Cloud not configured' };
   }
   if (!userId) {
-    return { pushed: 0, pulled: 0, error: null, skippedReason: 'Not signed in' };
+    return { pushed: 0, pulled: 0, deleted: 0, error: null, skippedReason: 'Not signed in' };
   }
 
   try {
+    const deleted = await pushDeletions(db);
     const pushed = await pushLocalEntries(db, userId);
     const pulled = await pullRemoteEntries(db);
-    return { pushed, pulled, error: null };
+    return { pushed, pulled, deleted, error: null };
   } catch (err: any) {
-    return { pushed: 0, pulled: 0, error: err?.message ?? 'Sync failed' };
+    return { pushed: 0, pulled: 0, deleted: 0, error: err?.message ?? 'Sync failed' };
   }
 }
