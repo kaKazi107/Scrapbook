@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Modal,
   View,
@@ -10,9 +10,11 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityEntry } from '@/types/activity';
 import { EntryCard } from './EntryCard';
+import { PhotoViewer } from './PhotoViewer';
 
 interface DayDetailModalProps {
   visible: boolean;
@@ -37,6 +39,10 @@ export function DayDetailModal({
 }: DayDetailModalProps) {
   const isDark = useColorScheme() === 'dark';
 
+  const [viewerPhotos, setViewerPhotos] = useState<string[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerVisible, setViewerVisible] = useState(false);
+
   if (!dateStr) return null;
 
   // Format date display (e.g., Nov 13, 2026)
@@ -49,7 +55,8 @@ export function DayDetailModal({
   });
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <>
+      <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
         <TouchableOpacity
           activeOpacity={1}
@@ -120,6 +127,28 @@ export function DayDetailModal({
                       ]);
                     }}
                   />
+
+                  {entry.photos && entry.photos.length > 0 ? (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.photosStrip}
+                    >
+                      {entry.photos.map((photo, photoIndex) => (
+                        <TouchableOpacity
+                          key={`${entry.id}-photo-${photoIndex}`}
+                          onPress={() => {
+                            setViewerPhotos(entry.photos ?? []);
+                            setViewerIndex(photoIndex);
+                            setViewerVisible(true);
+                          }}
+                          accessibilityLabel={`View photo ${photoIndex + 1}`}
+                        >
+                          <Image source={{ uri: photo }} style={styles.photoThumb} contentFit="cover" />
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  ) : null}
                   {entries.length > 1 && (
                     <TouchableOpacity
                       style={styles.coverToggleBtn}
@@ -146,7 +175,15 @@ export function DayDetailModal({
           </ScrollView>
         </TouchableOpacity>
       </TouchableOpacity>
-    </Modal>
+      </Modal>
+
+      <PhotoViewer
+        visible={viewerVisible}
+        photos={viewerPhotos}
+        initialIndex={viewerIndex}
+        onClose={() => setViewerVisible(false)}
+      />
+    </>
   );
 }
 
@@ -217,6 +254,17 @@ const styles = StyleSheet.create({
   },
   entryWrapper: {
     position: 'relative',
+  },
+  photosStrip: {
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingBottom: 10,
+    marginTop: -2,
+  },
+  photoThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
   },
   coverToggleBtn: {
     flexDirection: 'row',

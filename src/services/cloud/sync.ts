@@ -24,7 +24,12 @@ function isCloudReady(): boolean {
   return supabase !== null;
 }
 
-function toRemotePayload(entry: ActivityEntry, userId: string, imageUrl: string | null) {
+function toRemotePayload(
+  entry: ActivityEntry,
+  userId: string,
+  imageUrl: string | null,
+  photoUrls: string[]
+) {
   return {
     user_id: userId,
     local_id: entry.id,
@@ -36,6 +41,7 @@ function toRemotePayload(entry: ActivityEntry, userId: string, imageUrl: string 
     rating: entry.rating ?? null,
     note: entry.note ?? null,
     image_url: imageUrl,
+    photos: photoUrls,
     is_cover: entry.isCover ?? false,
     external_id: entry.externalId ?? null,
     external_source: entry.externalSource ?? null,
@@ -56,6 +62,7 @@ function fromRemoteRow(row: any): RemoteEntryInput {
     rating: row.rating ?? undefined,
     note: row.note ?? undefined,
     imageUri: row.image_url ?? undefined,
+    photos: Array.isArray(row.photos) ? (row.photos as string[]) : undefined,
     isCover: row.is_cover ?? false,
     externalId: row.external_id ?? undefined,
     externalSource: row.external_source ?? undefined,
@@ -80,7 +87,18 @@ async function pushLocalEntries(db: SQLiteDatabase, userId: string): Promise<num
       if (uploaded) imageUrl = uploaded;
     }
 
-    const payload = toRemotePayload(entry, userId, imageUrl);
+    const photoUrls: string[] = [];
+    for (const photo of entry.photos ?? []) {
+      if (isRemoteImageUri(photo)) {
+        photoUrls.push(photo);
+      } else {
+        const uploaded = await uploadImageToCloud(photo, userId);
+        // Keep the local path as-is if the upload failed; it retries next sync.
+        photoUrls.push(uploaded ?? photo);
+      }
+    }
+
+    const payload = toRemotePayload(entry, userId, imageUrl, photoUrls);
 
     const { data, error } = await supabase
       .from('activity_entries')

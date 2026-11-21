@@ -23,6 +23,11 @@ export interface ActivityEntry {
   rating?: number; // 0.5 to 5.0
   note?: string;
   imageUri?: string;
+  /**
+   * Personal photos attached to the entry. The cover (`imageUri`) keeps the
+   * metadata poster, while these are your own shots shown in the entry detail.
+   */
+  photos?: string[];
   isCover?: boolean; // If true, preferred thumbnail for this date
   externalId?: string;
   externalSource?: string;

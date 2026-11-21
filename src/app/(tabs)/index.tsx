@@ -31,6 +31,7 @@ import { CalendarGrid } from '@/components/CalendarGrid';
 import { EntryCard } from '@/components/EntryCard';
 import { AddEditModal } from '@/components/AddEditModal';
 import { DayDetailModal } from '@/components/DayDetailModal';
+import { PhotoViewer } from '@/components/PhotoViewer';
 import { deleteImageFromLocalStorage } from '@/services/storage';
 import { BottomTabInset } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
@@ -55,6 +56,18 @@ export default function HomeScreen() {
   const [dayModalVisible, setDayModalVisible] = useState(false);
   const [selectedDayDateStr, setSelectedDayDateStr] = useState<string>('');
   const [dayEntries, setDayEntries] = useState<ActivityEntry[]>([]);
+
+  // Personal photo gallery
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerPhotos, setViewerPhotos] = useState<string[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
+  const openPhotos = (entry: ActivityEntry, index = 0) => {
+    if (!entry.photos || entry.photos.length === 0) return;
+    setViewerPhotos(entry.photos);
+    setViewerIndex(index);
+    setViewerVisible(true);
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -146,6 +159,12 @@ export default function HomeScreen() {
     try {
       if (entry.imageUri) {
         await deleteImageFromLocalStorage(entry.imageUri);
+      }
+      // Clean up local photo files
+      if (entry.photos && entry.photos.length > 0) {
+        for (const photo of entry.photos) {
+          await deleteImageFromLocalStorage(photo);
+        }
       }
       await deleteEntry(db, entry.id);
       await loadData();
@@ -253,6 +272,7 @@ export default function HomeScreen() {
                 key={entry.id}
                 entry={entry}
                 onEdit={() => handleOpenEdit(entry)}
+                onPressPhotos={() => openPhotos(entry)}
                 onDelete={() => {
                   Alert.alert('Delete Memory', 'Are you sure you want to delete this memory?', [
                     { text: 'Cancel', style: 'cancel' },
@@ -292,6 +312,13 @@ export default function HomeScreen() {
         onEditEntry={handleOpenEdit}
         onDeleteEntry={handleDeleteEntry}
         onSetCover={handleSetCover}
+      />
+
+      <PhotoViewer
+        visible={viewerVisible}
+        photos={viewerPhotos}
+        initialIndex={viewerIndex}
+        onClose={() => setViewerVisible(false)}
       />
     </SafeAreaView>
   );

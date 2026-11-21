@@ -11,10 +11,12 @@ interface EntryCardProps {
   onPress?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  /** Opens the personal photo gallery for this entry. */
+  onPressPhotos?: () => void;
   showDate?: boolean;
 }
 
-export function EntryCard({ entry, onPress, onEdit, onDelete, showDate = true }: EntryCardProps) {
+export function EntryCard({ entry, onPress, onEdit, onDelete, onPressPhotos, showDate = true }: EntryCardProps) {
   const isDark = useColorScheme() === 'dark';
   const category = CATEGORIES[entry.category] || CATEGORIES.movie;
   const categoryColor = isDark ? category.darkColor : category.color;
@@ -45,6 +47,19 @@ export function EntryCard({ entry, onPress, onEdit, onDelete, showDate = true }:
           <Ionicons name={category.icon as any} size={36} color={categoryColor} />
         </View>
       )}
+
+      {/* Personal photo count badge */}
+      {entry.photos && entry.photos.length > 0 ? (
+        <TouchableOpacity
+          style={styles.photoBadge}
+          onPress={onPressPhotos}
+          disabled={!onPressPhotos}
+          accessibilityLabel={`${entry.photos.length} photos`}
+        >
+          <Ionicons name="images" size={12} color="#FFFFFF" />
+          <Text style={styles.photoBadgeText}>{entry.photos.length}</Text>
+        </TouchableOpacity>
+      ) : null}
 
       {/* Content */}
       <View style={styles.content}>
@@ -125,6 +140,23 @@ const styles = StyleSheet.create({
     minHeight: 125,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  photoBadge: {
+    position: 'absolute',
+    left: 8,
+    bottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+  },
+  photoBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
   content: {
     flex: 1,

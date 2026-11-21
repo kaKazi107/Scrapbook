@@ -49,6 +49,7 @@ export function AddEditModal({
   const [rating, setRating] = useState<number>(0);
   const [note, setNote] = useState('');
   const [imageUri, setImageUri] = useState<string | undefined>();
+  const [photos, setPhotos] = useState<string[]>([]);
   const [isCover, setIsCover] = useState(false);
   const [metadata, setMetadata] = useState<Record<string, string>>({});
   const [externalId, setExternalId] = useState<string | undefined>();
@@ -66,6 +67,7 @@ export function AddEditModal({
         setRating(entryToEdit.rating || 0);
         setNote(entryToEdit.note || '');
         setImageUri(entryToEdit.imageUri);
+        setPhotos(entryToEdit.photos ?? []);
         setIsCover(entryToEdit.isCover || false);
         setMetadata(entryToEdit.metadata || {});
         setExternalId(entryToEdit.externalId);
@@ -79,6 +81,7 @@ export function AddEditModal({
         setRating(0);
         setNote('');
         setImageUri(undefined);
+        setPhotos([]);
         setIsCover(true); // default first entry of day as cover
         setMetadata({});
         setExternalId(undefined);
@@ -151,6 +154,43 @@ export function AddEditModal({
     }
   };
 
+  /** Adds one or more personal photos (poster/cover stays untouched). */
+  const handleAddPhotos = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Camera roll permission is required to add photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets?.length) {
+      setPhotos((prev) => [...prev, ...result.assets.map((a) => a.uri)]);
+    }
+  };
+
+  const handleAddPhotoFromCamera = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Camera permission is required to take photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+
+    if (!result.canceled && result.assets?.length) {
+      setPhotos((prev) => [...prev, ...result.assets.map((a) => a.uri)]);
+    }
+  };
+
+  const handleRemovePhoto = (index: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleMetadataChange = (key: string, value: string) => {
     setMetadata((prev) => ({ ...prev, [key]: value }));
   };
@@ -174,6 +214,14 @@ export function AddEditModal({
         permanentImageUri = await saveImageToLocalStorage(imageUri);
       }
 
+      // Persist any newly picked photos; already-stored ones are returned as-is.
+      const permanentPhotos: string[] = [];
+      for (const photo of photos) {
+        permanentPhotos.push(
+          photo.startsWith('http') ? photo : await saveImageToLocalStorage(photo)
+        );
+      }
+
       // Clean empty metadata keys
       const cleanMetadata: Record<string, string> = {};
       Object.entries(metadata).forEach(([k, v]) => {
@@ -188,6 +236,7 @@ export function AddEditModal({
         rating: rating > 0 ? rating : undefined,
         note: note.trim() || undefined,
         imageUri: permanentImageUri,
+        photos: permanentPhotos,
         isCover,
         externalId,
         externalSource,
@@ -264,8 +313,8 @@ export function AddEditModal({
             })}
           </View>
 
-          {/* Photo/Cover Picker */}
-          <Text style={[styles.sectionLabel, { color: isDark ? '#9CA3AF' : '#4B5563' }]}>POSTER / PHOTO</Text>
+          {/* Cover / poster */}
+          <Text style={[styles.sectionLabel, { color: isDark ? '#9CA3AF' : '#4B5563' }]}>COVER (POSTER)</Text>
           <View style={styles.photoContainer}>
             {imageUri ? (
               <View style={styles.imagePreviewWrapper}>
@@ -296,6 +345,53 @@ export function AddEditModal({
                 <Text style={[styles.photoBtnText, { color: isDark ? '#D1D5DB' : '#374151' }]}>Camera</Text>
               </TouchableOpacity>
             </View>
+          </View>
+
+          {/* Personal photos (kept alongside the poster) */}
+          <Text style={[styles.sectionLabel, { color: isDark ? '#9CA3AF' : '#4B5563' }]}>
+            PHOTOS{photos.length > 0 ? ` (${photos.length})` : ''}
+          </Text>
+          {photos.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.photosStrip}
+            >
+              {photos.map((photo, index) => (
+                <View key={`${photo}-${index}`} style={styles.photoThumbWrapper}>
+                  <Image source={{ uri: photo }} style={styles.photoThumb} contentFit="cover" />
+                  <TouchableOpacity
+                    style={styles.removePhotoBtn}
+                    onPress={() => handleRemovePhoto(index)}
+                    accessibilityLabel="Remove photo"
+                  >
+                    <Ionicons name="close-circle" size={22} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </ScrollView>
+          ) : null}
+
+          <View style={[styles.photoButtonsRow, photos.length > 0 ? styles.photoButtonsRowSpaced : null]}>
+            <TouchableOpacity
+              style={[styles.photoBtn, { backgroundColor: isDark ? '#1F2937' : '#F3F4F6' }]}
+              onPress={handleAddPhotos}
+            >
+              <Ionicons name="add-circle-outline" size={20} color={activeCategoryDef.color} />
+              <Text style={[styles.photoBtnText, { color: isDark ? '#D1D5DB' : '#374151' }]}>
+                Add photos
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.photoBtn, { backgroundColor: isDark ? '#1F2937' : '#F3F4F6' }]}
+              onPress={handleAddPhotoFromCamera}
+            >
+              <Ionicons name="camera-outline" size={20} color={activeCategoryDef.color} />
+              <Text style={[styles.photoBtnText, { color: isDark ? '#D1D5DB' : '#374151' }]}>
+                Shoot
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Auto-fill from metadata provider */}
@@ -546,6 +642,25 @@ const styles = StyleSheet.create({
   },
   photoButtonsRowSpaced: {
     marginTop: 12,
+  },
+  photosStrip: {
+    gap: 10,
+    paddingVertical: 2,
+  },
+  photoThumbWrapper: {
+    position: 'relative',
+  },
+  photoThumb: {
+    width: 78,
+    height: 78,
+    borderRadius: 12,
+  },
+  removePhotoBtn: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
   },
   photoBtn: {
     flex: 1,

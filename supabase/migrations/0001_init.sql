@@ -45,6 +45,7 @@ create table if not exists public.activity_entries (
   rating real,
   note text,
   image_url text,
+  photos jsonb not null default '[]'::jsonb,
   is_cover boolean not null default false,
   external_id text,
   external_source text,

@@ -20,6 +20,7 @@ import { CATEGORY_LIST } from '@/constants/categories';
 import { searchEntries, deleteEntry, updateEntry, getAllEntries } from '@/services/db';
 import { CategoryFilter } from '@/components/CategoryFilter';
 import { EntryCard } from '@/components/EntryCard';
+import { PhotoViewer } from '@/components/PhotoViewer';
 import { AddEditModal } from '@/components/AddEditModal';
 import { deleteImageFromLocalStorage } from '@/services/storage';
 import { BottomTabInset } from '@/constants/theme';
@@ -39,6 +40,18 @@ export default function ExploreScreen() {
   const [allEntries, setAllEntries] = useState<ActivityEntry[]>([]);
 
   const [editingEntry, setEditingEntry] = useState<ActivityEntry | null>(null);
+
+  // Personal photo gallery
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerPhotos, setViewerPhotos] = useState<string[]>([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
+  const openPhotos = (entry: ActivityEntry, index = 0) => {
+    if (!entry.photos || entry.photos.length === 0) return;
+    setViewerPhotos(entry.photos);
+    setViewerIndex(index);
+    setViewerVisible(true);
+  };
   const [addModalVisible, setAddModalVisible] = useState(false);
 
   const runSearch = useCallback(async () => {
@@ -93,6 +106,11 @@ export default function ExploreScreen() {
         onPress: async () => {
           if (entry.imageUri) {
             await deleteImageFromLocalStorage(entry.imageUri);
+          }
+          if (entry.photos && entry.photos.length > 0) {
+            for (const photo of entry.photos) {
+              await deleteImageFromLocalStorage(photo);
+            }
           }
           await deleteEntry(db, entry.id);
           await runSearch();
@@ -353,6 +371,7 @@ export default function ExploreScreen() {
               key={entry.id}
               entry={entry}
               onEdit={() => handleEdit(entry)}
+              onPressPhotos={() => openPhotos(entry)}
               onDelete={() => handleDelete(entry)}
             />
           ))
@@ -375,6 +394,13 @@ export default function ExploreScreen() {
             syncInBackground();
           }
         }}
+      />
+
+      <PhotoViewer
+        visible={viewerVisible}
+        photos={viewerPhotos}
+        initialIndex={viewerIndex}
+        onClose={() => setViewerVisible(false)}
       />
     </SafeAreaView>
   );

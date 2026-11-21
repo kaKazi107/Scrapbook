@@ -53,6 +53,9 @@ export async function initDatabase(db: SQLiteDatabase): Promise<void> {
   await ensureColumn(db, 'activity_entries', 'remote_id', 'TEXT');
   await ensureColumn(db, 'activity_entries', 'user_id', 'TEXT');
   await ensureColumn(db, 'activity_entries', 'synced_at', 'TEXT');
+
+  // Personal photos stored as a JSON array; the cover stays in image_uri.
+  await ensureColumn(db, 'activity_entries', 'photos', 'TEXT');
 }
 
 interface RawDbRow {
@@ -65,6 +68,7 @@ interface RawDbRow {
   rating: number | null;
   note: string | null;
   image_uri: string | null;
+  photos: string | null;
   is_cover: number;
   external_id: string | null;
   external_source: string | null;
@@ -74,6 +78,16 @@ interface RawDbRow {
   remote_id: string | null;
   user_id: string | null;
   synced_at: string | null;
+}
+
+function parseStringArray(value: string | null): string[] | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string' && v.length > 0) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function mapRowToEntry(row: RawDbRow): ActivityEntry {
@@ -96,6 +110,7 @@ function mapRowToEntry(row: RawDbRow): ActivityEntry {
     rating: row.rating !== null ? row.rating : undefined,
     note: row.note || undefined,
     imageUri: row.image_uri || undefined,
+    photos: parseStringArray(row.photos),
     isCover: row.is_cover === 1,
     externalId: row.external_id || undefined,
     externalSource: row.external_source || undefined,
@@ -137,6 +152,10 @@ export async function insertEntry(db: SQLiteDatabase, entry: NewActivityEntry): 
   const now = new Date().toISOString();
   const metadataStr = entry.metadata ? JSON.stringify(entry.metadata) : null;
   const isCoverVal = entry.isCover ? 1 : 0;
+  const photos = entry.photos && entry.photos.length > 0 ? entry.photos : undefined;
+  const photosStr = photos ? JSON.stringify(photos) : null;
+  // Keep the metadata poster as the cover; fall back to the first personal photo.
+  const coverUri = entry.imageUri || photos?.[0] || null;
 
   // If this entry is cover, reset existing covers for this date
   if (entry.isCover) {
@@ -145,8 +164,8 @@ export async function insertEntry(db: SQLiteDatabase, entry: NewActivityEntry): 
 
   await db.runAsync(
     `INSERT INTO activity_entries (
-      id, category, title, subtitle, logged_date, logged_time, rating, note, image_uri, is_cover, external_id, external_source, metadata, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      id, category, title, subtitle, logged_date, logged_time, rating, note, image_uri, photos, is_cover, external_id, external_source, metadata, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       entry.category,
@@ -156,7 +175,8 @@ export async function insertEntry(db: SQLiteDatabase, entry: NewActivityEntry): 
       entry.loggedTime || null,
       entry.rating ?? null,
       entry.note || null,
-      entry.imageUri || null,
+      coverUri,
+      photosStr,
       isCoverVal,
       entry.externalId || null,
       entry.externalSource || null,
@@ -169,6 +189,8 @@ export async function insertEntry(db: SQLiteDatabase, entry: NewActivityEntry): 
   return {
     ...entry,
     id,
+    imageUri: coverUri ?? undefined,
+    photos,
     createdAt: now,
     updatedAt: now,
   };
@@ -190,6 +212,10 @@ export async function updateEntry(db: SQLiteDatabase, id: string, entry: Partial
   }
 
   const metadataStr = updated.metadata ? JSON.stringify(updated.metadata) : null;
+  const photos = updated.photos && updated.photos.length > 0 ? updated.photos : undefined;
+  const photosStr = photos ? JSON.stringify(photos) : null;
+  // Keep the metadata poster as the cover; fall back to the first personal photo.
+  const coverUri = updated.imageUri || photos?.[0] || null;
 
   await db.runAsync(
     `UPDATE activity_entries SET
@@ -201,6 +227,7 @@ export async function updateEntry(db: SQLiteDatabase, id: string, entry: Partial
       rating = ?,
       note = ?,
       image_uri = ?,
+      photos = ?,
       is_cover = ?,
       external_id = ?,
       external_source = ?,
@@ -215,7 +242,8 @@ export async function updateEntry(db: SQLiteDatabase, id: string, entry: Partial
       updated.loggedTime || null,
       updated.rating ?? null,
       updated.note || null,
-      updated.imageUri || null,
+      coverUri,
+      photosStr,
       updated.isCover ? 1 : 0,
       updated.externalId || null,
       updated.externalSource || null,
@@ -345,6 +373,7 @@ export interface RemoteEntryInput {
   rating?: number;
   note?: string;
   imageUri?: string;
+  photos?: string[];
   isCover?: boolean;
   externalId?: string;
   externalSource?: string;
@@ -363,6 +392,9 @@ export async function upsertEntryFromRemote(
   remote: RemoteEntryInput
 ): Promise<void> {
   const metadataStr = remote.metadata ? JSON.stringify(remote.metadata) : null;
+  const photos = remote.photos && remote.photos.length > 0 ? remote.photos : undefined;
+  const photosStr = photos ? JSON.stringify(photos) : null;
+  const coverUri = remote.imageUri || photos?.[0] || null;
   const existing = await db.getAllAsync<RawDbRow>(
     `SELECT * FROM activity_entries WHERE remote_id = ?`,
     [remote.remoteId]
@@ -378,7 +410,7 @@ export async function upsertEntryFromRemote(
     await db.runAsync(
       `UPDATE activity_entries SET
         category = ?, title = ?, subtitle = ?, logged_date = ?, logged_time = ?,
-        rating = ?, note = ?, image_uri = ?, is_cover = ?, external_id = ?,
+        rating = ?, note = ?, image_uri = ?, photos = ?, is_cover = ?, external_id = ?,
         external_source = ?, metadata = ?, user_id = ?, synced_at = ?, updated_at = ?
       WHERE remote_id = ?`,
       [
@@ -389,7 +421,8 @@ export async function upsertEntryFromRemote(
         remote.loggedTime || null,
         remote.rating ?? null,
         remote.note || null,
-        remote.imageUri || null,
+        coverUri,
+        photosStr,
         remote.isCover ? 1 : 0,
         remote.externalId || null,
         remote.externalSource || null,
@@ -407,9 +440,9 @@ export async function upsertEntryFromRemote(
   await db.runAsync(
     `INSERT INTO activity_entries (
       id, category, title, subtitle, logged_date, logged_time, rating, note,
-      image_uri, is_cover, external_id, external_source, metadata,
+      image_uri, photos, is_cover, external_id, external_source, metadata,
       remote_id, user_id, synced_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       localId,
       remote.category,
@@ -419,7 +452,8 @@ export async function upsertEntryFromRemote(
       remote.loggedTime || null,
       remote.rating ?? null,
       remote.note || null,
-      remote.imageUri || null,
+      coverUri,
+      photosStr,
       remote.isCover ? 1 : 0,
       remote.externalId || null,
       remote.externalSource || null,

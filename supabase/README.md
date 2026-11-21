@@ -12,7 +12,9 @@ This folder holds the cloud schema for Stage B (auth + sync + photo storage).
 
 1. In the Supabase dashboard open **SQL Editor**.
 2. Paste the entire contents of [`migrations/0001_init.sql`](./migrations/0001_init.sql) and click **Run**.
-3. This creates `profiles`, `catalog_items`, `activity_entries`, row-level-security
+3. Then paste [`migrations/0002_photos.sql`](./migrations/0002_photos.sql) and click **Run** (adds the
+   `photos` column for personal photos).
+4. This creates `profiles`, `catalog_items`, `activity_entries`, row-level-security
    policies, the signup trigger, and the public `entry-images` storage bucket.
 
 ## 3. Enable email auth
@@ -39,8 +41,7 @@ This folder holds the cloud schema for Stage B (auth + sync + photo storage).
 | --- | --- |
 | `profiles` | One row per auth user (auto-created on signup) |
 | `catalog_items` | Shared, deduplicated metadata (future edge-function proxy) |
-| `activity_entries` | Per-user memories; `local_id` maps back to the phone row |
-| `storage.entry-images` | Public-read photo bucket; writes scoped to the owner's folder |
+| `activity_entries` | Per-user memories; `local_id` maps back to the phone row || `storage.entry-images` | Public-read photo bucket; writes scoped to the owner's folder |
 
 ## How sync works (current)
 
