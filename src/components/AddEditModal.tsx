@@ -274,25 +274,28 @@ export function AddEditModal({
                   <Ionicons name="close-circle" size={24} color="#EF4444" />
                 </TouchableOpacity>
               </View>
-            ) : (
-              <View style={styles.photoButtonsRow}>
-                <TouchableOpacity
-                  style={[styles.photoBtn, { backgroundColor: isDark ? '#1F2937' : '#F3F4F6' }]}
-                  onPress={handlePickImage}
-                >
-                  <Ionicons name="images-outline" size={20} color={activeCategoryDef.color} />
-                  <Text style={[styles.photoBtnText, { color: isDark ? '#D1D5DB' : '#374151' }]}>Gallery</Text>
-                </TouchableOpacity>
+            ) : null}
 
-                <TouchableOpacity
-                  style={[styles.photoBtn, { backgroundColor: isDark ? '#1F2937' : '#F3F4F6' }]}
-                  onPress={handleTakeImage}
-                >
-                  <Ionicons name="camera-outline" size={20} color={activeCategoryDef.color} />
-                  <Text style={[styles.photoBtnText, { color: isDark ? '#D1D5DB' : '#374151' }]}>Camera</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            {/* Always available, so an auto-filled poster can be replaced with your own photo. */}
+            <View style={[styles.photoButtonsRow, imageUri ? styles.photoButtonsRowSpaced : null]}>
+              <TouchableOpacity
+                style={[styles.photoBtn, { backgroundColor: isDark ? '#1F2937' : '#F3F4F6' }]}
+                onPress={handlePickImage}
+              >
+                <Ionicons name="images-outline" size={20} color={activeCategoryDef.color} />
+                <Text style={[styles.photoBtnText, { color: isDark ? '#D1D5DB' : '#374151' }]}>
+                  {imageUri ? 'Replace' : 'Gallery'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.photoBtn, { backgroundColor: isDark ? '#1F2937' : '#F3F4F6' }]}
+                onPress={handleTakeImage}
+              >
+                <Ionicons name="camera-outline" size={20} color={activeCategoryDef.color} />
+                <Text style={[styles.photoBtnText, { color: isDark ? '#D1D5DB' : '#374151' }]}>Camera</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Auto-fill from metadata provider */}
@@ -540,6 +543,9 @@ const styles = StyleSheet.create({
   photoButtonsRow: {
     flexDirection: 'row',
     gap: 12,
+  },
+  photoButtonsRowSpaced: {
+    marginTop: 12,
   },
   photoBtn: {
     flex: 1,

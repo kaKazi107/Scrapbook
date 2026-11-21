@@ -171,8 +171,13 @@ export async function syncNow(
     const deleted = await pushDeletions(db);
     const pushed = await pushLocalEntries(db, userId);
     const pulled = await pullRemoteEntries(db);
+    if (__DEV__ && (pushed || pulled || deleted)) {
+      console.log(`[sync] pushed=${pushed} pulled=${pulled} deleted=${deleted}`);
+    }
     return { pushed, pulled, deleted, error: null };
   } catch (err: any) {
-    return { pushed: 0, pulled: 0, deleted: 0, error: err?.message ?? 'Sync failed' };
+    const message = err?.message ?? 'Sync failed';
+    console.warn('[sync] failed:', message);
+    return { pushed: 0, pulled: 0, deleted: 0, error: message };
   }
 }

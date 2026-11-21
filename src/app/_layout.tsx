@@ -11,7 +11,7 @@ import { initDatabase } from '@/services/db';
 SplashScreen.preventAutoHideAsync();
 
 export const unstable_settings = {
-  initialRouteName: '(tabs)',
+  anchor: '(tabs)',
 };
 
 /**
